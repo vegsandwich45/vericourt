@@ -1,0 +1,100 @@
+// ─── Prisma Schema for VeriCourt ──────────────────────────────────────────────
+// Review 3: Relational Database Architecture & Hybrid Web3 Storage
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:../data/vericourt.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ── 1. Court Benches (Jurisdictional Hierarchy) ──────────────────────────────
+model CourtBench {
+  id          String      @id @default(uuid())
+  code        String      @unique // e.g. "IN-SC", "IN-BOM", "IN-DEL"
+  name        String
+  jurisdiction String
+  icon        String      @default("⚖️")
+  established Int
+  isLive      Boolean     @default(true)
+  registrars  Registrar[]
+  judgments   Judgment[]
+
+  @@map("court_benches")
+}
+
+// ── 2. Authorized Registrars (Role-Based Access Control - RBAC) ──────────────
+model Registrar {
+  id            String      @id @default(uuid())
+  email         String      @unique
+  name          String
+  walletAddress String      @unique // EVM wallet address authorized on-chain
+  role          String      @default("REGISTRAR") // "ADMIN", "REGISTRAR", "CHIEF_CLERK"
+  benchId       String
+  bench         CourtBench  @relation(fields: [benchId], references: [id])
+  isAuthorized  Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  judgments     Judgment[]
+
+  @@map("registrars")
+}
+
+// ── 3. Judgments (Off-Chain Legal Index with On-Chain Anchors) ───────────────
+model Judgment {
+  id               String       @id @default(uuid())
+  caseNumber       String       @unique // e.g. "WP(C)-2026-8941"
+  benchId          String
+  bench            CourtBench   @relation(fields: [benchId], references: [id])
+  courtName        String
+  judgmentType     String       // "Writ Petition", "Criminal Appeal", "Civil Suit"
+  petitioner       String
+  respondent       String
+  sha256Hash       String       @unique // 256-bit hash anchored to EVM smart contract
+  ipfsCid          String       // Decentralized storage CID (Tier 2)
+  blockNumber      Int
+  txHash           String
+  gasUsed          Int          @default(48290)
+  sealedAt         DateTime     @default(now())
+  registrarAddress String
+  registrarId      String?
+  registrar        Registrar?   @relation(fields: [registrarId], references: [id])
+  auditLogs        AuditLog[]
+
+  @@index([sha256Hash])
+  @@index([caseNumber])
+  @@map("judgments")
+}
+
+// ── 4. Forensic Audit Logs (Tamper & Verification History) ────────────────────
+model AuditLog {
+  id           String    @id @default(uuid())
+  caseNumber   String?
+  queriedHash  String
+  verdict      String    // "AUTHENTIC", "TAMPERED", "AI_HALLUCINATION"
+  ipAddress    String    @default("127.0.0.1")
+  userAgent    String?
+  latencyMs    Float     @default(3.8)
+  createdAt    DateTime  @default(now())
+  judgmentId   String?
+  judgment     Judgment? @relation(fields: [judgmentId], references: [id])
+
+  @@index([queriedHash])
+  @@index([verdict])
+  @@map("audit_logs")
+}
+
+// ── 5. Statutory Section 65B Admissibility Certificates ──────────────────────
+model Section65BCertificate {
+  id             String    @id @default(uuid())
+  certId         String    @unique // e.g. "SEC65B-SC-2026-8941"
+  caseNumber     String
+  documentHash   String
+  courtName      String
+  statutoryAct   String    @default("Section 65B(4) IEA 1872 / Section 63 BSA 2023")
+  generatedAt    DateTime  @default(now())
+  downloadCount  Int       @default(1)
+
+  @@map("section_65b_certificates")
+}

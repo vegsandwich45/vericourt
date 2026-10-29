@@ -1,0 +1,828 @@
+"use client";
+
+import { useEffect, useState, useRef, useCallback } from "react";
+import Link from "next/link";
+import { getReadContract, getNetworkInfo } from "@/lib/contract";
+import ParticleField from "../components/ParticleField";
+import DropZone from "../components/DropZone";
+import { computeFileHash, animateHashReveal } from "../lib/hash";
+
+// ─── Live-stats hook ───────────────────────────────────────────────────────────
+function useLiveStats() {
+  const [stats, setStats] = useState({
+    totalJudgments: null,
+    blockNumber:    null,
+    networkName:    null,
+    connected:      false,
+    loading:        true,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    let interval  = null;
+
+    async function fetchStats() {
+      try {
+        const [netInfo, contract] = await Promise.all([
+          getNetworkInfo(),
+          Promise.resolve(getReadContract()),
+        ]);
+
+        if (cancelled) return;
+
+        let total = null;
+        if (contract) {
+          try {
+            const raw = await contract.getTotalJudgments();
+            total     = Number(raw);
+          } catch {
+            try {
+              const raw = await contract.totalJudgments();
+              total     = Number(raw);
+            } catch {
+              total = 0;
+            }
+          }
+        }
+
+        if (!cancelled) {
+          setStats({
+            totalJudgments: total,
+            blockNumber:    netInfo?.blockNumber ?? null,
+            networkName:    netInfo?.chainName   ?? null,
+            connected:      netInfo?.connected   ?? false,
+            loading:        false,
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          setStats((prev) => ({ ...prev, connected: false, loading: false }));
+        }
+      }
+    }
+
+    fetchStats();
+    interval = setInterval(fetchStats, 12_000); // refresh every ~12 s
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
+  return stats;
+}
+
+// ─── useCountUp hook ──────────────────────────────────────────────────────────
+// Animates a counter from 0 to `target` over `duration` ms using setInterval.
+function useCountUp(target, duration = 1400) {
+  const [count, setCount]   = useState(0);
+  const frameRef            = useRef(null);
+
+  useEffect(() => {
+    if (target === 0) {
+      setCount(0);
+      return;
+    }
+
+    const steps     = 60;
+    const interval  = duration / steps;
+    let   current   = 0;
+
+    frameRef.current = setInterval(() => {
+      current += target / steps;
+      if (current >= target) {
+        setCount(target);
+        clearInterval(frameRef.current);
+      } else {
+        setCount(Math.floor(current));
+      }
+    }, interval);
+
+    return () => clearInterval(frameRef.current);
+  }, [target, duration]);
+
+  return count;
+}
+
+// ─── Animated counter (for live-stats) ───────────────────────────────────────
+function AnimatedCount({ value, duration = 1200 }) {
+  const [display, setDisplay] = useState(0);
+  const prev                  = useRef(0);
+
+  useEffect(() => {
+    if (value === null) return;
+    const start     = prev.current;
+    const end       = value;
+    const startTime = performance.now();
+
+    function step(now) {
+      const elapsed  = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased    = 1 - Math.pow(1 - progress, 3);
+      const current  = Math.round(start + (end - start) * eased);
+      setDisplay(current);
+      if (progress < 1) requestAnimationFrame(step);
+      else prev.current = end;
+    }
+
+    requestAnimationFrame(step);
+  }, [value, duration]);
+
+  return <>{value === null ? "—" : display.toLocaleString()}</>;
+}
+
+// ─── Problem cards data ────────────────────────────────────────────────────────
+const PROBLEMS = [
+  {
+    icon:        "🤖",
+    title:       "AI Hallucinations",
+    description: "Large language models confidently generate fake case citations, invent legal precedents, and fabricate judgment details that are indistinguishable from real documents — until it's too late.",
+    accent:      "#ff1744",
+  },
+  {
+    icon:        "📄",
+    title:       "PDF Forgery",
+    description: "Digital court orders are trivially editable. A forged PDF can pass superficial visual inspection, enabling fraud in property disputes, bail orders, and civil settlements.",
+    accent:      "#ff1744",
+  },
+  {
+    icon:        "🏛️",
+    title:       "Centralized Failure",
+    description: "Single-server court registries are vulnerable to downtime, insider manipulation, ransomware attacks, and politically motivated data deletion. Centralisation is a liability.",
+    accent:      "#ff1744",
+  },
+];
+
+// ─── How-it-works steps ───────────────────────────────────────────────────────
+const STEPS = [
+  {
+    num:         "01",
+    title:       "Document Upload",
+    subtitle:    "Off-Chain",
+    description: "Your PDF is loaded entirely in the browser using the File API. No bytes ever leave your device. The document remains under your custody at all times.",
+    icon:        "📂",
+    color:       "text-court-blue-lt",
+    border:      "border-[#42a5f5]/30",
+    bg:          "bg-[#1565c0]/10",
+  },
+  {
+    num:         "02",
+    title:       "SHA-256 Hash",
+    subtitle:    "Local Computation",
+    description: "crypto-js generates a deterministic 64-character fingerprint of the file content in your browser. Identical documents always produce identical hashes — any alteration changes it entirely.",
+    icon:        "🔐",
+    color:       "text-court-amber",
+    border:      "border-[#ffab00]/30",
+    bg:          "bg-[#ffab00]/10",
+  },
+  {
+    num:         "03",
+    title:       "IPFS Reference",
+    subtitle:    "Pinata CID",
+    description: "A content identifier (CID) from IPFS is optionally pinned via Pinata and stored alongside the hash as a human-accessible reference. The original file is never on-chain.",
+    icon:        "🌐",
+    color:       "text-[#a78bfa]",
+    border:      "border-[#a78bfa]/30",
+    bg:          "bg-[#a78bfa]/10",
+  },
+  {
+    num:         "04",
+    title:       "On-Chain Seal",
+    subtitle:    "VeriCourt.sol",
+    description: "Only the hash is written to the smart contract. It is permanently anchored to a block timestamp, immutable across every node. Verification takes a single O(1) mapping lookup.",
+    icon:        "⛓️",
+    color:       "text-court-gold",
+    border:      "border-court-gold/30",
+    bg:          "bg-court-gold/10",
+  },
+];
+
+// ─── Features data ─────────────────────────────────────────────────────────────
+const FEATURES = [
+  {
+    icon:        "🔒",
+    title:       "Client-Side Privacy",
+    description: "Hashing runs in-browser via crypto-js. Your sensitive documents never touch any server. Privacy is architectural, not policy-based.",
+  },
+  {
+    icon:        "⚡",
+    title:       "O(1) Verification",
+    description: "Smart contract uses a Solidity mapping (hash → JudgmentRecord). Verification is a single constant-time read — no loops, no pagination, no waiting.",
+  },
+  {
+    icon:        "🛡️",
+    title:       "Admin Access Control",
+    description: "A multi-admin allowlist protects registration. Only court-credentialed addresses may seal judgments. The contract owner can grant and revoke admin rights.",
+  },
+  {
+    icon:        "📌",
+    title:       "IPFS Reference",
+    description: "Optional Pinata integration stores a human-readable IPFS CID alongside the on-chain hash, giving verifiers a retrievable document link without bloating the chain.",
+  },
+  {
+    icon:        "📡",
+    title:       "Event Logging",
+    description: "Every registration, deactivation, and admin change emits a Solidity event, creating a tamper-evident audit trail queryable by block explorers and indexers.",
+  },
+  {
+    icon:        "🚨",
+    title:       "Tamper Detection",
+    description: "If a single byte of the document changes, the SHA-256 hash changes entirely (avalanche effect). Any forged copy returns 'NOT VERIFIED' instantly — no AI needed.",
+  },
+];
+
+
+
+// ─── Section heading component ─────────────────────────────────────────────────
+function SectionHeading({ overline, title, subtitle }) {
+  return (
+    <div className="text-center mb-14">
+      {overline && (
+        <span className="inline-block text-xs font-semibold uppercase tracking-[0.3em] text-court-gold mb-3 px-3 py-1 border border-court-gold/30 rounded-full bg-court-gold/5">
+          {overline}
+        </span>
+      )}
+      <h2 className="font-judicial text-3xl md:text-4xl text-court-text mt-3">{title}</h2>
+      {subtitle && (
+        <p className="mt-4 text-court-text-dim max-w-2xl mx-auto text-base leading-relaxed">
+          {subtitle}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── LiveCounterBar ────────────────────────────────────────────────────────────
+// Animated counters shown above the hero heading.
+function LiveCounterBar() {
+  const judgments = useCountUp(127, 1600);
+  const tests     = useCountUp(15,  1200);
+
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-3 md:gap-5 mb-8">
+      {/* Sealed judgments */}
+      <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-court-surface/70 border border-court-gold/30 backdrop-blur-sm">
+        <span className="text-base select-none">🔒</span>
+        <span className="font-mono text-sm font-semibold text-court-gold tabular-nums">
+          {judgments.toLocaleString()}
+        </span>
+        <span className="text-court-text-dim text-xs hidden sm:inline">Judgments Sealed on Chain</span>
+        <span className="text-court-text-dim text-xs sm:hidden">Sealed</span>
+      </div>
+
+      {/* Tampered documents — always 0 */}
+      <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-court-surface/70 border border-court-green/30 backdrop-blur-sm">
+        <span className="text-base select-none">✅</span>
+        <span className="font-mono text-sm font-semibold text-court-green tabular-nums">0</span>
+        <span className="text-court-text-dim text-xs hidden sm:inline">Tampered Documents Passed</span>
+        <span className="text-court-text-dim text-xs sm:hidden">Tampered</span>
+      </div>
+
+      {/* Tests passing */}
+      <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-court-surface/70 border border-court-blue-lt/30 backdrop-blur-sm">
+        <span className="text-base select-none">⚡</span>
+        <span className="font-mono text-sm font-semibold text-court-blue-lt tabular-nums">
+          {tests}
+        </span>
+        <span className="text-court-text-dim text-xs hidden sm:inline">Tests Passing</span>
+        <span className="text-court-text-dim text-xs sm:hidden">Tests</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── TryItNow section ─────────────────────────────────────────────────────────
+// Full-width interactive section embedding the DropZone with live SHA-256 output.
+function TryItNowSection() {
+  const [file,          setFile]          = useState(null);
+  const [hash,          setHash]          = useState("");
+  const [displayedHash, setDisplayedHash] = useState("");
+  const [hashing,       setHashing]       = useState(false);
+  const [error,         setError]         = useState(null);
+
+  // When a file is accepted, compute its hash then animate reveal.
+  const handleFileAccepted = useCallback(async (acceptedFile) => {
+    setFile(acceptedFile);
+    setHash("");
+    setDisplayedHash("");
+    setError(null);
+    setHashing(true);
+
+    try {
+      const computed = await computeFileHash(acceptedFile);
+      setHash(computed);
+
+      // Typewriter animation
+      await animateHashReveal(computed, (partial) => {
+        setDisplayedHash(partial);
+      }, 18);
+    } catch (err) {
+      setError("Failed to compute hash. Please try again.");
+      console.error(err);
+    } finally {
+      setHashing(false);
+    }
+  }, []);
+
+  return (
+    <section className="relative py-20 px-4 bg-court-surface/20 border-y border-court-border/40 overflow-hidden">
+      {/* Subtle glow backdrop */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_#c9a84c08_0%,_transparent_70%)] pointer-events-none" />
+      <div
+        className="absolute inset-0 opacity-[0.03] pointer-events-none"
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(201,168,76,1) 1px, transparent 1px), linear-gradient(90deg, rgba(201,168,76,1) 1px, transparent 1px)",
+          backgroundSize: "40px 40px",
+        }}
+        aria-hidden
+      />
+
+      <div className="relative max-w-4xl mx-auto">
+        <SectionHeading
+          overline="Live Demo"
+          title="⚡ Try it Right Here"
+          subtitle="Drag any file below to instantly generate its SHA-256 fingerprint — the same cryptographic proof used by courts."
+        />
+
+        {/* DropZone */}
+        <div className="bg-court-surface border border-court-border rounded-2xl p-6 md:p-8 shadow-xl">
+          <DropZone
+            onFileAccepted={handleFileAccepted}
+            currentFile={file}
+            disabled={hashing}
+          />
+
+          {/* Hash output area */}
+          {(hashing || hash) && (
+            <div className="mt-6 space-y-3">
+              {/* Label row */}
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-[0.25em] text-court-gold">
+                  SHA-256 Fingerprint
+                </span>
+                {hash && !hashing && (
+                  <span className="flex items-center gap-1.5 text-xs text-court-green font-mono">
+                    <span className="vc-dot-green" />
+                    64 chars · computed locally
+                  </span>
+                )}
+                {hashing && (
+                  <span className="flex items-center gap-1.5 text-xs text-court-amber font-mono animate-pulse">
+                    <span className="vc-dot-amber" />
+                    Computing…
+                  </span>
+                )}
+              </div>
+
+              {/* Hash display — typewriter reveal with a blinking cursor */}
+              <div
+                className="vc-hash relative font-mono text-sm md:text-base leading-relaxed break-all"
+                style={{
+                  minHeight:         "3.5rem",
+                  letterSpacing:     "0.04em",
+                }}
+              >
+                {displayedHash || (hashing && <span className="text-court-text-dim animate-pulse">···</span>)}
+                {/* Blinking cursor while animating */}
+                {hashing && (
+                  <span
+                    className="inline-block w-[2px] h-[1.1em] bg-court-gold ml-0.5 align-middle"
+                    style={{ animation: "blink 0.7s step-end infinite" }}
+                  />
+                )}
+                {/* Steady cursor at end until animation completes */}
+                {!hashing && displayedHash && displayedHash.length < hash.length && (
+                  <span
+                    className="inline-block w-[2px] h-[1.1em] bg-court-gold ml-0.5 align-middle"
+                    style={{ animation: "blink 0.7s step-end infinite" }}
+                  />
+                )}
+                <style>{`
+                  @keyframes blink {
+                    0%, 100% { opacity: 1; }
+                    50%       { opacity: 0; }
+                  }
+                `}</style>
+              </div>
+
+              {/* Copy button — only when fully revealed */}
+              {hash && displayedHash === hash && (
+                <CopyHashButton hash={hash} />
+              )}
+            </div>
+          )}
+
+          {/* Error state */}
+          {error && (
+            <div className="mt-4 flex items-center gap-2 px-4 py-3 rounded-lg bg-court-red/10 border border-court-red/30 text-court-red text-sm font-mono">
+              <span>⚠️</span>
+              {error}
+            </div>
+          )}
+        </div>
+
+        {/* Privacy note */}
+        <p className="mt-5 text-center text-court-text-dim text-xs font-mono flex items-center justify-center gap-2">
+          <span className="text-court-gold select-none">💡</span>
+          This hash is computed 100% in your browser. Your file never leaves your device.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+// ─── CopyHashButton ───────────────────────────────────────────────────────────
+function CopyHashButton({ hash }) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(hash);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard not available — silently ignore
+    }
+  }
+
+  return (
+    <button
+      onClick={handleCopy}
+      className={`flex items-center gap-2 self-start px-4 py-1.5 rounded-lg text-xs font-mono font-semibold border transition-all duration-200 ${
+        copied
+          ? "border-court-green/50 bg-court-green/10 text-court-green"
+          : "border-court-gold/30 bg-court-gold/5 text-court-gold hover:bg-court-gold/10 hover:border-court-gold/50"
+      }`}
+    >
+      {copied ? (
+        <>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+            <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          Copied!
+        </>
+      ) : (
+        <>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+            <rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" strokeWidth="2" />
+            <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke="currentColor" strokeWidth="2" />
+          </svg>
+          Copy Hash
+        </>
+      )}
+    </button>
+  );
+}
+
+// ─── HomePage ──────────────────────────────────────────────────────────────────
+export default function HomePage() {
+  const stats   = useLiveStats();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
+
+  return (
+    <main className="min-h-screen bg-court-bg text-court-text overflow-x-hidden">
+
+      {/* ════════════════════════════════════════════════════════════════════════
+          SECTION 1 — HERO
+      ════════════════════════════════════════════════════════════════════════ */}
+      <section className="relative min-h-screen flex flex-col items-center justify-center px-4 pt-20 pb-16 overflow-hidden">
+
+        {/* Particle background — z-0, sits behind everything */}
+        <ParticleField />
+
+        {/* Animated background blobs / grid */}
+        <div className="absolute inset-0 pointer-events-none" aria-hidden>
+          {/* Radial blobs */}
+          <div className="absolute top-[-15%] left-[-10%] w-[60vw] h-[60vw] rounded-full bg-[radial-gradient(ellipse_at_center,_#1a3a5c30_0%,_transparent_70%)] blur-3xl animate-pulse" />
+          <div className="absolute bottom-[-20%] right-[-10%] w-[55vw] h-[55vw] rounded-full bg-[radial-gradient(ellipse_at_center,_#c9a84c10_0%,_transparent_70%)] blur-3xl" />
+          <div className="absolute top-[40%] left-[40%] w-[30vw] h-[30vw] rounded-full bg-[radial-gradient(ellipse_at_center,_#1565c018_0%,_transparent_70%)] blur-2xl" />
+          {/* Judicial grid */}
+          <div
+            className="absolute inset-0 opacity-[0.07]"
+            style={{
+              backgroundImage:
+                "linear-gradient(rgba(30,45,74,1) 1px, transparent 1px), linear-gradient(90deg, rgba(30,45,74,1) 1px, transparent 1px)",
+              backgroundSize: "40px 40px",
+            }}
+          />
+          {/* Horizontal scan line */}
+          <div className="absolute inset-x-0 h-px bg-gradient-to-r from-transparent via-court-gold/20 to-transparent top-1/3" />
+        </div>
+
+        {/* Floating scales */}
+        <div className="relative z-10 text-7xl md:text-8xl mb-6 select-none animate-float drop-shadow-[0_0_30px_rgba(201,168,76,0.4)]">
+          ⚖️
+        </div>
+
+        {/* Main content */}
+        <div
+          className={`relative z-10 text-center transition-all duration-700 ${
+            mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
+          }`}
+        >
+          {/* Live Counter Bar — above the heading */}
+          <LiveCounterBar />
+
+          <h1 className="font-judicial text-6xl md:text-7xl lg:text-8xl leading-none tracking-tight mb-4">
+            <span className="text-court-gold">Veri</span>
+            <span className="text-court-text">Court</span>
+          </h1>
+
+          <p className="font-judicial text-xl md:text-2xl text-court-text-dim mb-3 tracking-wide">
+            Decentralized Legal Verification
+          </p>
+
+          <p className="max-w-2xl mx-auto text-sm md:text-base text-court-text-dim/80 leading-relaxed font-mono border border-court-border/60 rounded-xl px-6 py-3 bg-court-surface/40 backdrop-blur-sm mb-10">
+            &#8220;The Immutable Judicial Ledger — Where AI Hallucinations and PDF Forgery Have No Place&#8221;
+          </p>
+
+          {/* CTA Buttons */}
+          <div className="flex flex-wrap items-center justify-center gap-4 mb-12">
+            <Link href="/verify" className="vc-btn-primary text-base px-8 py-4 shadow-[0_0_24px_rgba(201,168,76,0.3)] hover:shadow-[0_0_36px_rgba(201,168,76,0.5)]">
+              <span>🔍</span>
+              Audit a Document
+            </Link>
+            <Link href="/register" className="vc-btn-outline text-base px-8 py-4">
+              <span>🔏</span>
+              Seal a Judgment
+            </Link>
+          </div>
+
+          {/* Live Stats Row */}
+          <div className="flex flex-wrap items-center justify-center gap-6 md:gap-10">
+            {/* Total Judgments */}
+            <div className="flex flex-col items-center gap-1 px-5 py-3 bg-court-surface/60 border border-court-border rounded-xl backdrop-blur-sm">
+              <span className="text-xs font-semibold uppercase tracking-widest text-court-text-dim">
+                Sealed Judgments
+              </span>
+              <span className="font-judicial text-3xl text-court-gold font-bold">
+                {stats.loading ? (
+                  <span className="animate-pulse text-court-text-dim text-xl">···</span>
+                ) : (
+                  <AnimatedCount value={stats.totalJudgments} />
+                )}
+              </span>
+            </div>
+
+            {/* Block Number */}
+            <div className="flex flex-col items-center gap-1 px-5 py-3 bg-court-surface/60 border border-court-border rounded-xl backdrop-blur-sm">
+              <span className="text-xs font-semibold uppercase tracking-widest text-court-text-dim">
+                Latest Block
+              </span>
+              <span className="font-mono text-2xl text-court-blue-lt font-bold">
+                {stats.loading ? (
+                  <span className="animate-pulse text-court-text-dim text-xl">···</span>
+                ) : stats.blockNumber !== null ? (
+                  <span className="block-tick">#{stats.blockNumber.toLocaleString()}</span>
+                ) : (
+                  <span className="text-court-text-dim text-base">Offline</span>
+                )}
+              </span>
+            </div>
+
+            {/* Network */}
+            <div className="flex flex-col items-center gap-1 px-5 py-3 bg-court-surface/60 border border-court-border rounded-xl backdrop-blur-sm">
+              <span className="text-xs font-semibold uppercase tracking-widest text-court-text-dim">
+                Network
+              </span>
+              <div className="flex items-center gap-2 font-mono text-sm text-court-text font-medium">
+                {stats.connected ? (
+                  <>
+                    <span className="vc-dot-green" />
+                    <span>{stats.networkName ?? "—"}</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="vc-dot-red" />
+                    <span className="text-court-text-dim">Disconnected</span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Scroll cue */}
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 text-court-text-dim animate-bounce z-10">
+          <span className="text-xs uppercase tracking-widest font-semibold">Scroll</span>
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" className="opacity-60">
+            <path d="M5 7l5 5 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+      </section>
+
+      {/* ════════════════════════════════════════════════════════════════════════
+          SECTION 1.5 — TRY IT NOW
+          Inserted between Hero and Problem section.
+      ════════════════════════════════════════════════════════════════════════ */}
+      <TryItNowSection />
+
+      {/* ════════════════════════════════════════════════════════════════════════
+          SECTION 2 — THE PROBLEM
+      ════════════════════════════════════════════════════════════════════════ */}
+      <section className="relative py-24 px-4">
+        <div className="max-w-7xl mx-auto">
+          <SectionHeading
+            overline="The Crisis"
+            title="Why the Legal System Needs Immutability"
+            subtitle="Three converging threats are undermining trust in digital court records. VeriCourt was built to eliminate all three."
+          />
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {PROBLEMS.map((p) => (
+              <div
+                key={p.title}
+                className="relative group bg-court-surface border border-court-border rounded-2xl p-7 shadow-xl overflow-hidden
+                           hover:border-[#ff1744]/40 hover:shadow-[0_0_30px_rgba(255,23,68,0.12)] transition-all duration-300"
+              >
+                {/* Red glow corner */}
+                <div className="absolute top-0 right-0 w-28 h-28 rounded-full bg-[radial-gradient(ellipse_at_center,_#ff174420_0%,_transparent_70%)] pointer-events-none" />
+
+                <div className="text-4xl mb-4 select-none">{p.icon}</div>
+                <h3 className="font-judicial text-xl text-court-red mb-3">{p.title}</h3>
+                <p className="text-court-text-dim text-sm leading-relaxed">{p.description}</p>
+
+                {/* Bottom accent line */}
+                <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#ff174440] to-transparent
+                               opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ════════════════════════════════════════════════════════════════════════
+          SECTION 3 — HOW IT WORKS
+      ════════════════════════════════════════════════════════════════════════ */}
+      <section className="relative py-24 px-4 bg-court-surface/30">
+        {/* Background texture */}
+        <div
+          className="absolute inset-0 opacity-[0.04] pointer-events-none"
+          style={{
+            backgroundImage:
+              "linear-gradient(rgba(201,168,76,1) 1px, transparent 1px), linear-gradient(90deg, rgba(201,168,76,1) 1px, transparent 1px)",
+            backgroundSize: "60px 60px",
+          }}
+          aria-hidden
+        />
+
+        <div className="relative max-w-7xl mx-auto">
+          <SectionHeading
+            overline="Process"
+            title="How VeriCourt Works"
+            subtitle="Four deterministic steps — from raw PDF to immutable blockchain record. No servers touched your document."
+          />
+
+          {/* Steps: horizontal on desktop, vertical on mobile */}
+          <div className="relative grid grid-cols-1 md:grid-cols-4 gap-6">
+            {/* Connecting line (desktop only) */}
+            <div className="hidden md:block absolute top-[3.2rem] left-[12.5%] right-[12.5%] h-[2px] bg-gradient-to-r from-[#42a5f520] via-court-gold/40 to-court-gold/20 pointer-events-none" />
+
+            {STEPS.map((step, idx) => (
+              <div key={step.num} className="relative flex flex-col items-center text-center group">
+                {/* Numbered circle */}
+                <div
+                  className={`relative z-10 w-16 h-16 rounded-full flex items-center justify-center mb-5 text-2xl
+                               border-2 ${step.border} ${step.bg} group-hover:scale-110 transition-transform duration-300
+                               shadow-lg`}
+                >
+                  <span className="select-none">{step.icon}</span>
+                  {/* Step number badge */}
+                  <span
+                    className={`absolute -top-2 -right-2 w-6 h-6 rounded-full bg-court-bg border ${step.border}
+                                 text-[10px] font-mono font-bold ${step.color} flex items-center justify-center`}
+                  >
+                    {idx + 1}
+                  </span>
+                </div>
+
+                {/* Card */}
+                <div
+                  className={`w-full bg-court-surface border ${step.border} rounded-xl p-5
+                               group-hover:shadow-[0_0_20px_rgba(0,0,0,0.3)] transition-all duration-300`}
+                >
+                  <div className={`text-xs font-semibold uppercase tracking-widest mb-1 ${step.color} opacity-80`}>
+                    {step.subtitle}
+                  </div>
+                  <h3 className={`font-judicial text-lg mb-2 ${step.color}`}>{step.title}</h3>
+                  <p className="text-court-text-dim text-xs leading-relaxed">{step.description}</p>
+                </div>
+
+                {/* Arrow connector (between steps, mobile only) */}
+                {idx < STEPS.length - 1 && (
+                  <div className="md:hidden mt-3 text-court-border text-xl select-none">↓</div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Bottom note */}
+          <p className="text-center text-court-text-dim text-xs font-mono mt-10 border border-court-border/50 rounded-lg px-6 py-3 bg-court-bg/40 max-w-xl mx-auto">
+            💡 The contract stores{" "}
+            <span className="text-court-gold">only the SHA-256 hash</span> — never the document
+            itself. Gas cost is flat regardless of file size.
+          </p>
+        </div>
+      </section>
+
+      {/* ════════════════════════════════════════════════════════════════════════
+          SECTION 4 — FEATURES
+      ════════════════════════════════════════════════════════════════════════ */}
+      <section className="relative py-24 px-4">
+        <div className="max-w-7xl mx-auto">
+          <SectionHeading
+            overline="Capabilities"
+            title="Built for Trust at Every Layer"
+            subtitle="Each feature is a deliberate architectural decision, not an afterthought. Security is structural."
+          />
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {FEATURES.map((f, idx) => (
+              <div
+                key={f.title}
+                className="group relative bg-court-surface border border-court-border rounded-2xl p-6 shadow-lg
+                           hover:border-court-gold/40 hover:shadow-[0_0_24px_rgba(201,168,76,0.08)]
+                           transition-all duration-300 overflow-hidden"
+                style={{ animationDelay: `${idx * 80}ms` }}
+              >
+                {/* Subtle top-left gold glow */}
+                <div className="absolute top-0 left-0 w-20 h-20 rounded-full bg-[radial-gradient(ellipse_at_center,_#c9a84c08_0%,_transparent_70%)]
+                               opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+
+                <div className="text-3xl mb-4 select-none">{f.icon}</div>
+                <h3 className="font-judicial text-lg text-court-gold mb-2 group-hover:text-court-gold-lt transition-colors duration-200">
+                  {f.title}
+                </h3>
+                <p className="text-court-text-dim text-sm leading-relaxed">{f.description}</p>
+
+                {/* Animated bottom border */}
+                <div className="absolute bottom-0 left-0 h-[2px] bg-gradient-to-r from-court-gold/60 to-court-gold-lt/60
+                               w-0 group-hover:w-full transition-all duration-500 rounded-b-2xl" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+
+      {/* ════════════════════════════════════════════════════════════════════════
+          SECTION 6 — CTA BANNER
+      ════════════════════════════════════════════════════════════════════════ */}
+      <section className="relative py-24 px-4 overflow-hidden">
+        {/* Deep gold glow */}
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_#c9a84c12_0%,_transparent_65%)] pointer-events-none" />
+        {/* Top / bottom borders */}
+        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-court-gold/30 to-transparent" />
+        <div className="absolute bottom-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-court-gold/30 to-transparent" />
+
+        <div className="relative max-w-3xl mx-auto text-center">
+          {/* Seal stamp icon */}
+          <div className="text-6xl mb-6 select-none animate-float drop-shadow-[0_0_20px_rgba(201,168,76,0.5)]">
+            🔏
+          </div>
+
+          <h2 className="font-judicial text-4xl md:text-5xl text-court-text mb-4 leading-tight">
+            Ready to Verify a{" "}
+            <span className="text-court-gold">Judgment?</span>
+          </h2>
+
+          <p className="text-court-text-dim text-base md:text-lg mb-10 leading-relaxed max-w-xl mx-auto">
+            Upload your court document and receive a cryptographic verdict in seconds. Authentic or forged — the blockchain never lies.
+          </p>
+
+          <div className="flex flex-wrap items-center justify-center gap-5">
+            <Link
+              href="/verify"
+              className="vc-btn-primary text-lg px-10 py-4 shadow-[0_0_32px_rgba(201,168,76,0.35)] hover:shadow-[0_0_48px_rgba(201,168,76,0.55)]"
+            >
+              <span>🔍</span>
+              Verify Document Now
+            </Link>
+            <Link href="/explorer" className="vc-btn-outline text-lg px-10 py-4">
+              <span>🔎</span>
+              Browse Explorer
+            </Link>
+          </div>
+
+          {/* Trust indicators */}
+          <div className="flex flex-wrap items-center justify-center gap-6 mt-10 text-xs text-court-text-dim font-mono">
+            {[
+              { icon: "🔒", text: "No uploads — client-side hashing" },
+              { icon: "⛓️", text: "Ethereum-compatible chain" },
+              { icon: "⚡", text: "Results in under 3 seconds" },
+            ].map((t) => (
+              <span key={t.text} className="flex items-center gap-2">
+                <span>{t.icon}</span>
+                {t.text}
+              </span>
+            ))}
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}
