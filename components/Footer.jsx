@@ -98,11 +98,11 @@ export default function Footer() {
       <div className="border-t border-court-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row items-center justify-between gap-2">
           <p className="text-court-text-dim text-xs">
-            &copy; {year} VeriCourt. All rights reserved.
+            &copy; {year} VeriCourt · Developed by <span className="text-court-gold font-bold">Bhargav Patel</span> <span className="text-court-text font-mono font-semibold">(Reg No: 25BCE1528)</span>
           </p>
           <p className="text-court-text-dim text-xs flex items-center gap-1.5">
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-court-green/70" aria-hidden="true" />
-            Immutable On-Chain Registry
+            Immutable On-Chain Registry · Sepolia EVM
           </p>
         </div>
       </div>

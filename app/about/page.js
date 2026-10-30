@@ -257,6 +257,30 @@ export default function AboutPage() {
           </div>
         </section>
 
+        {/* ── Project Engineering & Author ──────────────────────────── */}
+        <section>
+          <div className="vc-divider">
+            <span className="text-court-gold font-mono text-xs tracking-widest uppercase">Lead Developer &amp; Project Authority</span>
+          </div>
+          <div className="vc-card bg-court-gold/5 border-court-gold/30 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">👨‍💻</span>
+              <div>
+                <h4 className="font-judicial text-lg font-bold text-court-gold">Bhargav Patel</h4>
+                <p className="font-mono text-xs text-court-text-dim">
+                  Registration Number: <span className="text-court-text font-bold">25BCE1528</span>
+                </p>
+                <p className="text-[11px] text-court-text-dim mt-0.5">
+                  Full-Stack Blockchain Engineering · Smart Contract Architecture · IPFS Decentralized Node Cluster
+                </p>
+              </div>
+            </div>
+            <span className="px-3 py-1 rounded-full bg-court-gold/20 text-court-gold border border-court-gold/40 text-xs font-mono font-bold">
+              Lead Project Developer
+            </span>
+          </div>
+        </section>
+
         {/* ── CTA ──────────────────────────────────────────────────── */}
         <section className="text-center pb-10">
           <div className="vc-card text-center">
