@@ -1,5 +1,5 @@
 {
-  "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+  "address": "0x27f0323E526Edf3769A621Ee3c60a9f3bd2EC56c",
   "abi": [
     {
       "inputs": [],
@@ -422,9 +422,10 @@
     }
   ],
   "network": {
-    "name": "localhost",
-    "chainId": 31337,
-    "rpcUrl": "http://127.0.0.1:8545"
+    "name": "Sepolia",
+    "chainId": 11155111,
+    "rpcUrl": "https://ethereum-sepolia-rpc.publicnode.com"
   },
-  "deployedAt": "2026-09-23T09:02:42.805Z"
+  "deployedAt": "2026-10-30T09:52:39.510Z",
+  "txHash": "0x0fc214f0eaa135af702b0163e943b2f67d9a807d3bc3f5c70223149eb767c36d"
 }
