@@ -9,6 +9,36 @@ export default function IPFSExplorerPage() {
   const [pinning, setPinning] = useState(false);
   const [alert, setAlert] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [downloadingCid, setDownloadingCid] = useState(null);
+
+  const handleDownloadLocally = async (cid, fileName) => {
+    try {
+      setDownloadingCid(cid);
+      const res = await fetch(`/api/ipfs/${cid}?download=1`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}: File could not be retrieved`);
+      const blob = await res.blob();
+
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const cleanName = fileName && fileName.endsWith('.pdf') ? fileName : `${fileName || cid}.pdf`;
+      link.setAttribute('download', cleanName);
+      document.body.appendChild(link);
+      link.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(link);
+
+      setAlert({
+        type: 'success',
+        message: `📥 Download complete! "${cleanName}" has been saved to your Mac's "Downloads" folder.`,
+      });
+    } catch (err) {
+      console.error(err);
+      setAlert({ type: 'error', message: 'Download failed: ' + err.message });
+    } finally {
+      setDownloadingCid(null);
+    }
+  };
 
   const fetchPins = async () => {
     try {
@@ -239,14 +269,14 @@ export default function IPFSExplorerPage() {
                         ● {pin.pin_status}
                       </td>
                       <td className="py-3 px-4 text-right space-x-2 whitespace-nowrap">
-                        <a
-                          href={`/api/ipfs/${pin.cid}?download=1`}
-                          download={pin.file_name || `${pin.cid}.pdf`}
-                          className="px-2.5 py-1 rounded bg-court-green/15 text-court-green hover:bg-court-green hover:text-night-black font-semibold text-[11px] transition-all inline-flex items-center gap-1"
-                          title="Save physical PDF copy directly to your local computer"
+                        <button
+                          onClick={() => handleDownloadLocally(pin.cid, pin.file_name)}
+                          disabled={downloadingCid === pin.cid}
+                          className="px-2.5 py-1 rounded bg-court-green/20 text-court-green hover:bg-court-green hover:text-night-black font-semibold text-[11px] transition-all inline-flex items-center gap-1 disabled:opacity-50"
+                          title="Save physical PDF copy directly to your Mac's Downloads folder"
                         >
-                          💾 Save to Disk
-                        </a>
+                          💾 {downloadingCid === pin.cid ? 'Saving...' : 'Save to Disk'}
+                        </button>
                         <a
                           href={`/api/ipfs/${pin.cid}`}
                           target="_blank"
