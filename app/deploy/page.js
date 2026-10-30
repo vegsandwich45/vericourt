@@ -94,7 +94,11 @@ export default function DeployPage() {
         await fetchBalance(accounts[0]);
       }
     } catch (err) {
-      setDeployError(err.message || 'Failed to connect MetaMask');
+      if (err?.code === -32002 || err?.message?.includes('already pending') || String(err).includes('-32002')) {
+        setDeployError('🦊 A MetaMask prompt is already pending. Please click the MetaMask Fox icon in your browser toolbar to approve or close it.');
+      } else {
+        setDeployError(err.message || 'Failed to connect MetaMask');
+      }
     } finally {
       setConnecting(false);
     }
