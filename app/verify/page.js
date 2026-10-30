@@ -205,19 +205,6 @@ export default function VerifyPage() {
     }
   }, []);
 
-  const handleLoadSample = useCallback(async (type = 'authentic') => {
-    try {
-      const url = type === 'authentic' ? '/sample_judgment.pdf' : '/forged_fake_judgment.pdf';
-      const fileName = type === 'authentic' ? 'Supreme_Court_Authentic_Decree.pdf' : 'Forged_Fake_Decree.pdf';
-      const response = await fetch(url);
-      const blob = await response.blob();
-      const mockFile = new File([blob], fileName, { type: 'application/pdf' });
-      handleFileAccepted(mockFile);
-    } catch (err) {
-      console.error('Failed to load sample document:', err);
-    }
-  }, [handleFileAccepted]);
-
   // ── Verify real hash ────────────────────────────────────────────────────────
   const handleVerify = async () => {
     if (!hash) return;
@@ -709,49 +696,12 @@ export default function VerifyPage() {
             {/* Drop zone */}
             <div className="vc-card">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-                <label className="vc-label mb-0">Step 1 — Upload Document</label>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <a
-                    href="/sample_judgment.pdf"
-                    download="Supreme_Court_Authentic_Decree.pdf"
-                    className="text-xs font-mono text-emerald-400 hover:underline flex items-center gap-1 bg-emerald-950/40 px-2.5 py-1 rounded border border-emerald-500/30 transition-all hover:bg-emerald-900/40"
-                    title="Download genuine pre-registered court decree (Will pass verification)"
-                  >
-                    <span>🟢</span>
-                    <span>Download Authentic PDF (Pass)</span>
-                  </a>
-                  <a
-                    href="/forged_fake_judgment.pdf"
-                    download="Forged_Fake_Decree.pdf"
-                    className="text-xs font-mono text-red-400 hover:underline flex items-center gap-1 bg-red-950/40 px-2.5 py-1 rounded border border-red-500/30 transition-all hover:bg-red-900/40"
-                    title="Download forged / fake decree (Will fail verification)"
-                  >
-                    <span>🔴</span>
-                    <span>Download Fake PDF (Fail)</span>
-                  </a>
-                </div>
+                <label className="vc-label mb-0">Step 1 — Upload Document for Verification</label>
+                <span className="text-xs font-mono text-court-text-dim">
+                  Upload user-sealed PDF to verify on-chain
+                </span>
               </div>
 
-              {/* Quick-test 1-click pills */}
-              <div className="flex items-center gap-2 mb-3 px-3 py-2 bg-court-bg/60 rounded-lg border border-court-border text-xs flex-wrap">
-                <span className="text-court-text-dim font-mono">⚡ 1-Click Load Test Files:</span>
-                <button
-                  type="button"
-                  onClick={() => handleLoadSample('authentic')}
-                  className="px-2.5 py-1 rounded bg-emerald-900/30 border border-emerald-500/30 text-emerald-300 font-mono hover:bg-emerald-800/40 transition-colors flex items-center gap-1"
-                >
-                  <span>✓</span>
-                  <span>Load Authentic Decree</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleLoadSample('fake')}
-                  className="px-2.5 py-1 rounded bg-red-900/30 border border-red-500/30 text-red-300 font-mono hover:bg-red-800/40 transition-colors flex items-center gap-1"
-                >
-                  <span>✗</span>
-                  <span>Load Fake / Forged Decree</span>
-                </button>
-              </div>
               <DropZone onFileAccepted={handleFileAccepted} />
 
               {/* File info */}
