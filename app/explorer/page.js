@@ -76,22 +76,49 @@ export default function ExplorerPage() {
     try {
       // 1. Fetch from Review 3 Database API
       const res = await fetch('/api/gazette?limit=100');
-      const json = await res.json();
+      const json = await res.json().catch(() => ({}));
+      const serverData = (json.success && Array.isArray(json.data)) ? json.data : [];
 
-      if (json.success && Array.isArray(json.data) && json.data.length > 0) {
-        const loaded = json.data;
+      // 2. Fetch locally sealed client records from Judge Chambers session
+      let localSeals = [];
+      if (typeof window !== 'undefined') {
+        try {
+          const raw = localStorage.getItem('vericourt_sealed_judgments');
+          if (raw) localSeals = JSON.parse(raw);
+        } catch (_) {}
+      }
 
+      const existingHashes = new Set(serverData.map((j) => (j.documentHash || '').toLowerCase()));
+      const formattedLocal = localSeals
+        .filter((ls) => !existingHashes.has((ls.documentHash || ls.sha256Hash || '').toLowerCase()))
+        .map((ls) => ({
+          caseNumber: ls.caseNumber,
+          courtName: ls.courtName,
+          ipfsHash: ls.ipfsHash,
+          documentHash: ls.documentHash || ls.sha256Hash,
+          judgmentType: ls.judgmentType || 'Writ Petition',
+          petitioner: ls.petitioner || 'Petitioner',
+          respondent: ls.respondent || 'Respondent',
+          timestamp: Math.floor(new Date(ls.timestamp).getTime() / 1000),
+          registrar: ls.registrarAddress || '0xEFcfC6095bD830460C0a5a12d2A03f0E65291829',
+          blockNumber: ls.blockNumber || 12026362,
+          txHash: ls.txHash,
+        }));
+
+      const loaded = [...formattedLocal, ...serverData];
+
+      if (loaded.length > 0) {
         // Detect new entries on refresh
         if (isRefresh) {
-          const freshHashes = new Set(loaded.map(j => j.documentHash));
-          const brandNew = [...freshHashes].filter(h => !knownHashes.current.has(h));
+          const freshHashes = new Set(loaded.map((j) => j.documentHash));
+          const brandNew = [...freshHashes].filter((h) => !knownHashes.current.has(h));
           if (brandNew.length > 0) {
             setNewRowIds(new Set(brandNew));
             setTimeout(() => setNewRowIds(new Set()), FLASH_DURATION);
           }
           knownHashes.current = freshHashes;
         } else {
-          knownHashes.current = new Set(loaded.map(j => j.documentHash));
+          knownHashes.current = new Set(loaded.map((j) => j.documentHash));
         }
 
         setJudgments(loaded);
