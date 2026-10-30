@@ -31,6 +31,7 @@ export default function JudgeDashboard() {
   const [sealError, setSealError] = useState('');
   const [sealing, setSealing] = useState(false);
   const [sealResult, setSealResult] = useState(null);
+  const [signingMethod, setSigningMethod] = useState('gateway'); // 'gateway' (Gasless Registrar) | 'metamask' (Direct Web3)
 
   // ── Gazette & Registry Search State ──
   const [registryQuery, setRegistryQuery] = useState('');
@@ -148,8 +149,8 @@ export default function JudgeDashboard() {
       let clientTxHash = null;
       let clientBlockNumber = null;
 
-      // Attempt live on-chain signing if MetaMask is available on Sepolia
-      if (typeof window !== 'undefined' && window.ethereum) {
+      // Attempt live on-chain signing if MetaMask mode is selected and available on Sepolia
+      if (signingMethod === 'metamask' && typeof window !== 'undefined' && window.ethereum) {
         try {
           const { ethers } = await import('ethers');
           const { getSignerContract } = await import('@/lib/contract');
@@ -565,6 +566,46 @@ export default function JudgeDashboard() {
                 placeholder="QmPZ9gcCEpq..."
               />
             </div>
+
+            {/* ── Signing Mode Switcher (Gasless Registrar vs MetaMask) ── */}
+            <div className="sm:col-span-2 p-3.5 rounded-xl bg-court-bg/80 border border-court-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <span className="text-xl">⚙️</span>
+                <div>
+                  <p className="text-xs font-mono font-bold text-court-text">Gas &amp; Signature Mode</p>
+                  <p className="text-[11px] text-court-text-dim">
+                    {signingMethod === 'gateway'
+                      ? '⚡ Gasless Registrar: Zero ETH required — sponsored by judicial DSC authority'
+                      : '🦊 MetaMask Web3: Calls live Sepolia contract (requires SepoliaETH gas)'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSigningMethod('gateway')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ${
+                    signingMethod === 'gateway'
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 shadow-sm'
+                      : 'bg-court-surface text-court-text-dim hover:text-court-text border border-court-border'
+                  }`}
+                >
+                  ⚡ Gasless Registrar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSigningMethod('metamask')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ${
+                    signingMethod === 'metamask'
+                      ? 'bg-court-gold/20 text-court-gold border border-court-gold/50 shadow-sm'
+                      : 'bg-court-surface text-court-text-dim hover:text-court-text border border-court-border'
+                  }`}
+                >
+                  🦊 MetaMask Web3
+                </button>
+              </div>
+            </div>
+
             <div className="sm:col-span-2">
               <button
                 type="submit"
