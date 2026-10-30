@@ -42,9 +42,41 @@ export default function CitizenDashboard() {
   }, [router]);
 
   const handleSearch = () => {
-    if (!searchQuery.trim()) return;
+    const q = searchQuery.trim();
+    if (!q) return;
+
+    // Check if user sealed this case in Judge dashboard
+    let customMatch = null;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = JSON.parse(localStorage.getItem('vericourt_sealed_judgments') || '[]');
+        customMatch = stored.find(
+          (r) => String(r.caseNumber || '').toLowerCase().trim() === q.toLowerCase().trim()
+        );
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+
+    if (customMatch) {
+      setCaseRecord({
+        caseNumber: customMatch.caseNumber,
+        courtName: customMatch.courtName || 'High Court of Judicature at Bombay',
+        bench: "Hon'ble Justice Vikramaditya Roy",
+        title: `${customMatch.petitioner || 'Petitioner'} vs ${customMatch.respondent || 'Respondent'}`,
+        status: 'DECREE_PRONOUNCED',
+        plainEnglishSummary: `The Bench has pronounced final decree in matter ${customMatch.caseNumber}. The official PDF has been cryptographically sealed on the Ethereum EVM ledger with SHA-256 fingerprint: ${customMatch.sha256Hash}.`,
+        vernacularSummary: `माननीय न्यायालय द्वारा मामला ${customMatch.caseNumber} में अंतिम फैसला सुनाया जा चुका है और इसे ब्लॉकचेन पर सुरक्षित कर दिया गया है।`,
+        nextStep: 'Your certified digital judgment is anchored on-chain and ready for verification.',
+        evmBlock: customMatch.blockNumber || 12,
+        bailStatus: 'Decree Signed & Anchored',
+        fasterStatus: 'Dispatched & Sealed On-Chain',
+      });
+      return;
+    }
+
     setCaseRecord({
-      caseNumber: searchQuery.trim(),
+      caseNumber: q,
       courtName: 'High Court of Judicature at Bombay',
       bench: "Hon'ble Justice Vikramaditya Roy",
       title: 'Ramesh Kumar Singh vs Union of India',
