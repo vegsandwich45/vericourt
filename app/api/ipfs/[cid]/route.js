@@ -6,6 +6,9 @@ import path from 'path';
 export async function GET(request, { params }) {
   try {
     const { cid } = params;
+    const { searchParams } = new URL(request.url);
+    const isDownload = searchParams.get('download') === '1' || searchParams.has('download');
+    const dispositionType = isDownload ? 'attachment' : 'inline';
 
     if (!cid) {
       return NextResponse.json({ error: 'CID parameter is required' }, { status: 400 });
@@ -13,6 +16,7 @@ export async function GET(request, { params }) {
 
     // 1. Look up pin metadata
     const pin = db.ipfsPins.findUnique({ cid });
+    const fileName = pin?.file_name || `${cid}.pdf`;
 
     // 2. Check RAM cache first (fastest, serverless resilient)
     global.__vericourt_ipfs_cache = global.__vericourt_ipfs_cache || new Map();
@@ -21,7 +25,7 @@ export async function GET(request, { params }) {
       return new NextResponse(cached.buffer, {
         headers: {
           'Content-Type': cached.mimeType || 'application/pdf',
-          'Content-Disposition': `inline; filename="${cached.fileName || `${cid}.pdf`}"`,
+          'Content-Disposition': `${dispositionType}; filename="${cached.fileName || fileName}"`,
           'X-IPFS-Gateway': 'VeriCourt Decentralized Cluster Node v1.0 (RAM-Fast)',
           'X-IPFS-CID': cid,
         },
@@ -30,8 +34,8 @@ export async function GET(request, { params }) {
 
     // 3. Locate physical file in content-addressed storage (/tmp on Vercel, data/ locally)
     const candidatePaths = [
-      path.join('/tmp', 'ipfs_store', `${cid}.pdf`),
       path.join(process.cwd(), 'data', 'ipfs_store', `${cid}.pdf`),
+      path.join('/tmp', 'ipfs_store', `${cid}.pdf`),
     ];
 
     for (const filePath of candidatePaths) {
@@ -40,7 +44,7 @@ export async function GET(request, { params }) {
         return new NextResponse(fileBuffer, {
           headers: {
             'Content-Type': pin?.mime_type || 'application/pdf',
-            'Content-Disposition': `inline; filename="${pin?.file_name || `${cid}.pdf`}"`,
+            'Content-Disposition': `${dispositionType}; filename="${fileName}"`,
             'X-IPFS-Gateway': 'VeriCourt Decentralized Cluster Node v1.0',
             'X-IPFS-CID': cid,
           },
@@ -66,7 +70,7 @@ IPFS Swarm Status: ONLINE · PINNED
     return new NextResponse(Buffer.from(content, 'utf-8'), {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `inline; filename="${cid}.pdf"`,
+        'Content-Disposition': `${dispositionType}; filename="${fileName}"`,
         'X-IPFS-Gateway': 'VeriCourt IPFS Node v1.0 (Content-Addressed)',
       },
     });

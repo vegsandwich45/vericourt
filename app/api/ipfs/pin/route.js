@@ -44,6 +44,7 @@ export async function POST(request) {
     // 3. Save physical payload into content-addressed IPFS storage directory (with Vercel serverless /tmp fallback)
     const isServerless = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.cwd().startsWith('/var/task');
     const ipfsDir = isServerless ? path.join('/tmp', 'ipfs_store') : path.join(process.cwd(), 'data', 'ipfs_store');
+    let localSavedFile = null;
     
     try {
       if (!fs.existsSync(ipfsDir)) {
@@ -51,6 +52,7 @@ export async function POST(request) {
       }
       const filePath = path.join(ipfsDir, `${cid}.pdf`);
       fs.writeFileSync(filePath, buffer);
+      localSavedFile = isServerless ? `/tmp/ipfs_store/${cid}.pdf` : `data/ipfs_store/${cid}.pdf`;
     } catch (fsErr) {
       console.warn('Physical disk write skipped or failed in serverless:', fsErr.message);
     }
@@ -64,7 +66,7 @@ export async function POST(request) {
     });
 
     // 4. Pinata Live Cluster Check (if PINATA keys are set)
-    let storageDriver = 'LOCAL_NODE';
+    let storageDriver = isServerless ? 'CLOUD_NODE' : 'LOCAL_DISK';
     if (process.env.PINATA_API_KEY && process.env.PINATA_SECRET_API_KEY) {
       storageDriver = 'PINATA_CLUSTER';
     }
@@ -82,12 +84,17 @@ export async function POST(request) {
 
     return NextResponse.json({
       success: true,
-      message: 'Document successfully pinned to decentralized IPFS node',
+      message: localSavedFile 
+        ? `Document pinned and stored physically at ${localSavedFile}`
+        : 'Document pinned to in-memory IPFS cluster node',
       cid,
+      localPath: localSavedFile,
+      isLocalDisk: !isServerless,
       fileName: pin.file_name,
       byteSize: pin.byte_size,
       storageDriver,
       gatewayUrl: `/api/ipfs/${cid}`,
+      downloadUrl: `/api/ipfs/${cid}?download=1`,
       publicGatewayUrl: `https://ipfs.io/ipfs/${cid}`,
       pinnedAt: pin.pinned_at,
     });

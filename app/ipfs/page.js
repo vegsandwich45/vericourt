@@ -84,7 +84,9 @@ export default function IPFSExplorerPage() {
 
           setAlert({
             type: 'success',
-            message: `File pinned successfully! CID: ${data.cid}`,
+            message: data.isLocalDisk
+              ? `✅ Pinned & Stored Locally on Disk at ${data.localPath} (CID: ${data.cid})`
+              : `✅ Pinned to IPFS Node (CID: ${data.cid}). Click "💾 Save to Disk" in the table below to download your copy.`,
           });
           setSelectedFile(null);
           await fetchPins();
@@ -131,6 +133,28 @@ export default function IPFSExplorerPage() {
             <button onClick={() => setAlert(null)} className="text-xs opacity-60 hover:opacity-100">✕</button>
           </div>
         )}
+
+        {/* ── Local Disk Directory Info Card ──────────────────────────────── */}
+        <div className="p-4 rounded-xl border border-court-gold/30 bg-court-gold/5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <span className="text-2xl">💾</span>
+            <div>
+              <h4 className="text-sm font-bold text-court-gold">Local Physical Storage Directory</h4>
+              <p className="text-xs text-court-text-dim mt-0.5">
+                Files pinned locally via <code className="text-court-gold bg-court-bg px-1.5 py-0.5 rounded">http://localhost:3000</code> are saved directly to your local computer disk:
+              </p>
+              <code className="text-[11px] font-mono text-cyan-300 block mt-1 bg-court-bg/80 p-1.5 rounded border border-court-border break-all select-all">
+                /Users/bhargavpatel/.gemini/antigravity/scratch/vericourt/frontend/data/ipfs_store/
+              </code>
+            </div>
+          </div>
+          <div className="text-xs text-court-text-dim shrink-0">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-court-green/10 text-court-green border border-court-green/30 font-mono">
+              <span className="w-2 h-2 rounded-full bg-court-green animate-pulse" />
+              Local Storage Active
+            </span>
+          </div>
+        </div>
 
         {/* ── Pin New Document Card ───────────────────────────────────────── */}
         <div className="vc-card border-cyan-500/30 bg-court-surface/90">
@@ -215,6 +239,14 @@ export default function IPFSExplorerPage() {
                         ● {pin.pin_status}
                       </td>
                       <td className="py-3 px-4 text-right space-x-2 whitespace-nowrap">
+                        <a
+                          href={`/api/ipfs/${pin.cid}?download=1`}
+                          download={pin.file_name || `${pin.cid}.pdf`}
+                          className="px-2.5 py-1 rounded bg-court-green/15 text-court-green hover:bg-court-green hover:text-night-black font-semibold text-[11px] transition-all inline-flex items-center gap-1"
+                          title="Save physical PDF copy directly to your local computer"
+                        >
+                          💾 Save to Disk
+                        </a>
                         <a
                           href={`/api/ipfs/${pin.cid}`}
                           target="_blank"
