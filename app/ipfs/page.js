@@ -14,11 +14,22 @@ export default function IPFSExplorerPage() {
     try {
       const res = await fetch('/api/ipfs/pin');
       const data = await res.json();
-      if (data.success) {
-        setPins(data.pins);
+      let serverPins = data.success ? data.pins : [];
+      let localPins = [];
+      if (typeof window !== 'undefined') {
+        try {
+          localPins = JSON.parse(localStorage.getItem('vericourt_user_pinned_files') || '[]');
+        } catch (_) {}
       }
+      const existingCids = new Set(serverPins.map((p) => p.cid));
+      setPins([...localPins.filter((lp) => !existingCids.has(lp.cid)), ...serverPins]);
     } catch (err) {
       console.error('Failed to fetch IPFS pins:', err);
+      if (typeof window !== 'undefined') {
+        try {
+          setPins(JSON.parse(localStorage.getItem('vericourt_user_pinned_files') || '[]'));
+        } catch (_) {}
+      }
     } finally {
       setLoading(false);
     }
@@ -54,6 +65,23 @@ export default function IPFSExplorerPage() {
         });
         const data = await res.json();
         if (data.success) {
+          const newPin = {
+            cid: data.cid,
+            file_name: selectedFile.name,
+            mime_type: selectedFile.type || 'application/pdf',
+            byte_size: data.byteSize || selectedFile.size,
+            storage_driver: data.storageDriver || 'LOCAL_NODE',
+            pin_status: 'PINNED',
+            pinned_at: new Date().toISOString(),
+          };
+          try {
+            const stored = JSON.parse(localStorage.getItem('vericourt_user_pinned_files') || '[]');
+            localStorage.setItem(
+              'vericourt_user_pinned_files',
+              JSON.stringify([newPin, ...stored.filter((x) => x.cid !== data.cid)])
+            );
+          } catch (_) {}
+
           setAlert({
             type: 'success',
             message: `File pinned successfully! CID: ${data.cid}`,

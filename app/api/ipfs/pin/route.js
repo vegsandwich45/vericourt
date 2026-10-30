@@ -41,13 +41,27 @@ export async function POST(request) {
     }
     const cid = 'Qm' + cidBody;
 
-    // 3. Save physical payload into content-addressed IPFS storage directory
-    const ipfsDir = path.join(process.cwd(), 'data', 'ipfs_store');
-    if (!fs.existsSync(ipfsDir)) {
-      fs.mkdirSync(ipfsDir, { recursive: true });
+    // 3. Save physical payload into content-addressed IPFS storage directory (with Vercel serverless /tmp fallback)
+    const isServerless = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.cwd().startsWith('/var/task');
+    const ipfsDir = isServerless ? path.join('/tmp', 'ipfs_store') : path.join(process.cwd(), 'data', 'ipfs_store');
+    
+    try {
+      if (!fs.existsSync(ipfsDir)) {
+        fs.mkdirSync(ipfsDir, { recursive: true });
+      }
+      const filePath = path.join(ipfsDir, `${cid}.pdf`);
+      fs.writeFileSync(filePath, buffer);
+    } catch (fsErr) {
+      console.warn('Physical disk write skipped or failed in serverless:', fsErr.message);
     }
-    const filePath = path.join(ipfsDir, `${cid}.pdf`);
-    fs.writeFileSync(filePath, buffer);
+
+    // In-memory RAM buffer persistence for serverless response
+    global.__vericourt_ipfs_cache = global.__vericourt_ipfs_cache || new Map();
+    global.__vericourt_ipfs_cache.set(cid, {
+      buffer,
+      fileName: fileName || `${caseNumber || 'decree'}.pdf`,
+      mimeType: mimeType || 'application/pdf',
+    });
 
     // 4. Pinata Live Cluster Check (if PINATA keys are set)
     let storageDriver = 'LOCAL_NODE';

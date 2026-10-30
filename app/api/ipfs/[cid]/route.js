@@ -14,20 +14,38 @@ export async function GET(request, { params }) {
     // 1. Look up pin metadata
     const pin = db.ipfsPins.findUnique({ cid });
 
-    // 2. Locate physical file in content-addressed storage
-    const ipfsDir = path.join(process.cwd(), 'data', 'ipfs_store');
-    const filePath = path.join(ipfsDir, `${cid}.pdf`);
-
-    if (fs.existsSync(filePath)) {
-      const fileBuffer = fs.readFileSync(filePath);
-      return new NextResponse(fileBuffer, {
+    // 2. Check RAM cache first (fastest, serverless resilient)
+    global.__vericourt_ipfs_cache = global.__vericourt_ipfs_cache || new Map();
+    const cached = global.__vericourt_ipfs_cache.get(cid);
+    if (cached) {
+      return new NextResponse(cached.buffer, {
         headers: {
-          'Content-Type': pin?.mime_type || 'application/pdf',
-          'Content-Disposition': `inline; filename="${pin?.file_name || `${cid}.pdf`}"`,
-          'X-IPFS-Gateway': 'VeriCourt Decentralized Cluster Node v1.0',
+          'Content-Type': cached.mimeType || 'application/pdf',
+          'Content-Disposition': `inline; filename="${cached.fileName || `${cid}.pdf`}"`,
+          'X-IPFS-Gateway': 'VeriCourt Decentralized Cluster Node v1.0 (RAM-Fast)',
           'X-IPFS-CID': cid,
         },
       });
+    }
+
+    // 3. Locate physical file in content-addressed storage (/tmp on Vercel, data/ locally)
+    const candidatePaths = [
+      path.join('/tmp', 'ipfs_store', `${cid}.pdf`),
+      path.join(process.cwd(), 'data', 'ipfs_store', `${cid}.pdf`),
+    ];
+
+    for (const filePath of candidatePaths) {
+      if (fs.existsSync(filePath)) {
+        const fileBuffer = fs.readFileSync(filePath);
+        return new NextResponse(fileBuffer, {
+          headers: {
+            'Content-Type': pin?.mime_type || 'application/pdf',
+            'Content-Disposition': `inline; filename="${pin?.file_name || `${cid}.pdf`}"`,
+            'X-IPFS-Gateway': 'VeriCourt Decentralized Cluster Node v1.0',
+            'X-IPFS-CID': cid,
+          },
+        });
+      }
     }
 
     // 3. Fallback: synthesize verified decree viewer response if file is a seeded CID
