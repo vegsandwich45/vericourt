@@ -145,6 +145,36 @@ export default function JudgeDashboard() {
     const cleanHash = fileHash.startsWith('0x') ? fileHash : '0x' + fileHash;
 
     try {
+      let clientTxHash = null;
+      let clientBlockNumber = null;
+
+      // Attempt live on-chain signing if MetaMask is available on Sepolia
+      if (typeof window !== 'undefined' && window.ethereum) {
+        try {
+          const { ethers } = await import('ethers');
+          const { getSignerContract } = await import('@/lib/contract');
+          const provider = new ethers.BrowserProvider(window.ethereum);
+          const network = await provider.getNetwork();
+          if (Number(network.chainId) === 11155111) {
+            const contract = await getSignerContract();
+            const tx = await contract.registerJudgment(
+              sealForm.caseNumber,
+              sealForm.issuingAuthority || session?.court || 'High Court of Judicature at Bombay',
+              sealForm.ipfsCid || `Qm${cleanHash.slice(2, 46)}`,
+              cleanHash,
+              sealForm.judgmentType,
+              sealForm.petitioner,
+              sealForm.respondent
+            );
+            clientTxHash = tx.hash;
+            const minedReceipt = await tx.wait();
+            clientBlockNumber = Number(minedReceipt.blockNumber);
+          }
+        } catch (chainErr) {
+          console.warn('Direct MetaMask signing skipped or timed out, continuing via gateway:', chainErr);
+        }
+      }
+
       const res = await fetch('/api/documents/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -158,12 +188,15 @@ export default function JudgeDashboard() {
           documentHash: cleanHash,
           ipfsHash: sealForm.ipfsCid || `Qm${cleanHash.slice(2, 46)}`,
           registrarAddress: session?.officerId || '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC',
+          txHash: clientTxHash,
+          blockNumber: clientBlockNumber,
         }),
       });
 
+      const json = await res.json().catch(() => ({}));
       const receipt = json?.receipt || json?.data || {};
-      const blockNumber = receipt.blockNumber || Math.floor(12000 + Math.random() * 500);
-      const txHash = receipt.txHash || `0x${cleanHash.slice(2, 26)}...${cleanHash.slice(-8)}`;
+      const blockNumber = clientBlockNumber || receipt.blockNumber || Math.floor(12000 + Math.random() * 500);
+      const txHash = clientTxHash || receipt.txHash || `0x${cleanHash.slice(2, 26)}...${cleanHash.slice(-8)}`;
 
       const newRecord = {
         caseNumber: sealForm.caseNumber,
@@ -337,6 +370,24 @@ export default function JudgeDashboard() {
               <span className="text-court-text">SHA-256 Fingerprint:</span>{' '}
               <span className="text-court-gold font-bold">{sealResult.sha256Hash}</span>
             </div>
+
+            {sealResult.txHash && (
+              <div className="text-[11px] text-court-text-dim break-all bg-black/50 p-2.5 rounded-lg border border-court-border/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="truncate">
+                  <span className="text-court-text">Ledger Tx Hash:</span>{' '}
+                  <span className="text-court-gold font-mono">{sealResult.txHash}</span>
+                </div>
+                <a
+                  href={`https://sepolia.etherscan.io/tx/${sealResult.txHash}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2.5 py-1 rounded bg-court-gold text-night-black font-bold text-[10px] hover:bg-court-gold-lt whitespace-nowrap flex items-center gap-1 self-start sm:self-auto"
+                >
+                  <span>Sepolia Etherscan</span>
+                  <span>↗</span>
+                </a>
+              </div>
+            )}
 
             <div className="pt-1 flex items-center justify-between flex-wrap gap-2">
               <span className="text-[10px] text-court-text-dim">

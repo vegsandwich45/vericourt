@@ -260,6 +260,18 @@ export default function Navbar() {
                     <span>📜</span>
                     <span>Gazette Audit</span>
                   </Link>
+                  <Link
+                    href="/deploy"
+                    className={`px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 ${
+                      pathname === '/deploy'
+                        ? 'bg-court-gold/20 text-court-gold border border-court-gold/40 font-bold'
+                        : 'text-court-gold hover:bg-court-surface border border-court-gold/30'
+                    }`}
+                    title="Deploy Smart Contract to Sepolia"
+                  >
+                    <span>🚀</span>
+                    <span>Sepolia Deploy</span>
+                  </Link>
 
                   <div className="h-4 w-px bg-court-border mx-1" />
 

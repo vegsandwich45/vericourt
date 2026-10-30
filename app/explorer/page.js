@@ -404,6 +404,17 @@ export default function ExplorerPage() {
                               🌐 IPFS
                             </a>
                           )}
+                          <a
+                            href={j.txHash?.startsWith('0x') && j.txHash.length > 25
+                              ? `https://sepolia.etherscan.io/tx/${j.txHash}`
+                              : `https://sepolia.etherscan.io`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs font-mono px-2 py-1 rounded border border-court-border/60 text-court-text-dim hover:text-court-gold hover:border-court-gold/40 whitespace-nowrap transition-colors"
+                            title="Verify on Sepolia Etherscan"
+                          >
+                            🔗 Sepolia
+                          </a>
                         </div>
                       </td>
                     </tr>
